@@ -1,0 +1,48 @@
+﻿<div class="popup_back_fade" hidden="@_hidden">
+    <div class="popup_back">
+        <div class="popup_input_container">
+            <button class="button" style="margin-left: auto; margin-right: 5px; height: 2rem; width: 2rem; font-size: 14px; text-align: center;" onclick="@(() => OnClickClose())">
+                X
+            </button>
+            @if (null != _key)
+            {
+                <input class="popup_input" @bind-Value="@_key.CurrentlySet" @bind-Value:event="oninput" />
+                <button class="button" style="margin-left: auto; margin-right: auto; width: 40%; height: 2.5rem;" onclick="@(() => OnClickSubmit())">
+                    Submit
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public required bool Hidden { get; set; }
+    bool _hidden;
+
+    [Parameter] public required Key EditKey { get; set; }
+    Key? _key;
+    [Parameter] public required EventCallback<Key> SubmitCallback { get; set; }
+
+    protected override Task OnParametersSetAsync()
+    {
+        _hidden = Hidden;
+        _key = EditKey;
+        return base.OnParametersSetAsync();
+    }
+
+    async void OnClickClose()
+    {
+        await SubmitCallback.InvokeAsync(EditKey);
+        StateHasChanged();
+    }
+
+    async void OnClickSubmit()
+    {
+        if (null != _key)
+        {
+            EditKey.CurrentlySet = _key.CurrentlySet;
+        }
+        await SubmitCallback.InvokeAsync(EditKey);
+        StateHasChanged();
+    }
+}

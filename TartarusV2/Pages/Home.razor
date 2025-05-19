@@ -1,0 +1,249 @@
+﻿@using System.Text
+@inject IJSRuntime JSRuntime
+@page "/"
+<PageTitle>Razer Config - @currentConfigurationName</PageTitle>
+
+<div class="home_container">
+    <ConfigurationPopup Hidden="@configurationPopupHidden" FormSubmitted="ConfigSubmittedCallback" HiddenChanged="ConfigPopupHiddenCallback"/>
+    <div class="home_grid">
+        <div class="home_top_bar">
+            <select @bind="@_currentConfigurationName" class="home_dropdown">
+                @foreach (var save in configurationSaves)
+                {
+                    <option value="@save">@save</option>
+                }
+                <option value="New">New</option>
+            </select>
+            <button class="button" style="height: 3rem; width: 3rem; display: flex; margin: 0;" onclick="@(() => OnClickDelete())">
+                <span class="material-icons" style="font-size: 25px; margin: auto;">delete</span>
+            </button>
+            <button class="button" style="height: 3rem; width: 7rem; margin-left: 1rem; margin-top: 0; margin-bottom: 0; margin-right: 0;" onclick="@(() => ExportCurrentConfig())">
+                Export
+            </button>
+            <button class="button" style="height: 3rem; width: 7rem; margin-left: 1rem; margin-top: 0; margin-bottom: 0; margin-right: 0" onclick="@(() => OnClickImport())">
+                Import
+            </button>
+            <InputFile id="upload_file" OnChange="@ImportConfig" accept=".json" style="width: 0; height: 0;" />
+        </div>
+        @if (null != configuration)
+        {
+            foreach (var key in configuration.Keys)
+            {
+                <div class="home_button_container">
+                    @if (KeyDict.ContainsKey(key)) 
+                    {
+                        <KeyPopup Hidden="@KeyDict[key]" EditKey="key" SubmitCallback="PopupEventCallback" />
+                    }
+                    <button class="button" onclick="@(() => OnKeyClick(key))">
+                        @key.Number
+                        <br />
+                        @key.CurrentlySet
+                    </button>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    Configuration? configuration;
+
+    List<string> configurationSaves = [];
+    string currentConfigurationName = "Default";
+
+    string _currentConfigurationName {
+        get => currentConfigurationName;
+        set {
+            if (currentConfigurationName != value)
+            {
+                OnDropdownChange(value);
+            }
+        }
+    }
+
+    Dictionary<Key, bool> KeyDict = [];
+    bool configurationPopupHidden = true;
+
+    async protected override Task OnInitializedAsync()
+    {
+        await GetConfigurationList();
+        await SetConfigurationList();
+
+        if (!configurationSaves.Contains("Default"))
+        {
+            configurationSaves.Add("Default");
+            await SetConfigurationList();
+            await GetConfigurationList();
+            await SetConfiguration("Default", new Configuration());
+        }
+
+        await Refresh();
+        await base.OnInitializedAsync();
+    }
+
+    async Task Refresh()
+    {
+        configuration = null;
+        await OnDropdownChange("Default");
+    }
+
+    void OnKeyClick(Key key) 
+    {
+        KeyDict[key] = !KeyDict[key];
+        StateHasChanged();
+    }
+
+    async void PopupEventCallback(Key key) 
+    {
+        KeyDict[key] = true;
+
+        if (null != configuration)
+        {
+            await SetConfiguration(currentConfigurationName, configuration);
+            await GetConfiguration(currentConfigurationName);
+        }
+
+        StateHasChanged();
+    }
+
+    void ConfigPopupHiddenCallback(bool hidden)
+    {
+        configurationPopupHidden = hidden;
+    }
+
+    async void ConfigSubmittedCallback(string configName)
+    {
+        configurationSaves.Add(configName);
+        await SetConfigurationList();
+        await SetConfiguration(configName, new Configuration());
+        _currentConfigurationName = configName;
+    }
+
+    async Task OnDropdownChange(string value)
+    {
+        if (value != "New")
+        {
+            currentConfigurationName = value;
+
+            var config = await GetConfiguration(currentConfigurationName);
+
+            if (null != config)
+            {
+                configuration = config;
+                KeyDict = [];
+
+                foreach (var key in configuration.Keys)
+                {
+                    if (!KeyDict.ContainsKey(key))
+                    {
+                        KeyDict.Add(key, true);
+                    }
+                }
+            }
+            else
+            {
+                configuration = new Configuration();
+            }
+        }
+        else
+        {
+            configurationPopupHidden = false;
+        }
+
+        StateHasChanged();
+    }
+
+    async Task SetConfigurationList()
+    {
+        var json = JsonConvert.SerializeObject(configurationSaves);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "ConfigurationList", json);
+    }
+
+    async Task GetConfigurationList()
+    {
+        var storage = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "ConfigurationList");
+
+        if (null != storage)
+        {
+            configurationSaves = JsonConvert.DeserializeObject<List<string>>(storage)!;
+        }
+    }
+
+    async Task<Configuration?> GetConfiguration(string configName)
+    {
+        var storage = await JSRuntime.InvokeAsync<string>("localStorage.getItem", configName);
+
+        if (null != storage) 
+        {
+            return JsonConvert.DeserializeObject<Configuration>(storage);
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    async Task SetConfiguration(string configName, Configuration config)
+    {
+        var json = JsonConvert.SerializeObject(config);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", configName, json);
+    }
+
+    async Task OnClickDelete()
+    {
+        if ((currentConfigurationName != "Default") && (currentConfigurationName != "New")) 
+        {
+            configurationSaves.Remove(currentConfigurationName);
+            await SetConfigurationList();
+            await JSRuntime.InvokeVoidAsync("localStorage.removeItem", currentConfigurationName);
+            await GetConfigurationList();
+            await Refresh();
+        }
+        else if (currentConfigurationName == "Default")
+        {
+            await SetConfiguration("Default", new Configuration());
+            await Refresh();
+        }
+
+        StateHasChanged();
+    }
+
+    async void ExportCurrentConfig()
+    {
+        var config = JsonConvert.SerializeObject(configuration);
+        using var fs = new MemoryStream(new UTF8Encoding(true).GetBytes(config));
+        using var sr = new DotNetStreamReference(stream: fs);
+
+        try 
+        {
+            await JSRuntime.InvokeVoidAsync("downloadFileFromStream", $"{currentConfigurationName}.json", sr);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+        }
+    }
+
+    async void ImportConfig(InputFileChangeEventArgs e)
+    {
+        using var fs = e.File.OpenReadStream();
+        using var sr = new StreamReader(fs);
+        var json = await sr.ReadToEndAsync();
+
+        var obj = JsonConvert.DeserializeObject<Configuration>(json);
+        var fileName = e.File.Name.Replace(".json", "");
+
+        if (null != obj)
+        {
+            configurationSaves.Add(fileName);
+            await SetConfigurationList();
+            await SetConfiguration(fileName, obj);
+            _currentConfigurationName = fileName;
+        }
+    }
+
+    async void OnClickImport()
+    {
+        await JSRuntime.InvokeVoidAsync("clickElementById", "upload_file");
+    }
+}

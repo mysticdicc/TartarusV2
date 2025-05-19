@@ -1,0 +1,43 @@
+﻿<div class="popup_back_fade" hidden="@_hidden">
+    <div class="popup_back">
+        <div class="popup_input_container">
+            <button class="button" style="margin-left: auto; margin-right: 5px; height: 2rem; width: 2rem; font-size: 14px; text-align: center;" onclick="@(() => OnClickClose())">
+                X
+            </button>
+            <input class="popup_input" @bind-Value="@_configName" @bind-Value:event="oninput" />
+            <button class="button" style="margin-left: auto; margin-right: auto; width: 40%; height: 2.5rem;" onclick="@(() => OnClickSubmit())">
+                Submit
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public required bool Hidden { get; set; }
+    [Parameter] public required EventCallback<bool> HiddenChanged { get; set; }
+    bool _hidden;
+
+    [Parameter] public required EventCallback<string> FormSubmitted { get; set; }
+    string _configName = String.Empty;
+
+    protected override Task OnParametersSetAsync()
+    {
+        _hidden = Hidden;
+        return base.OnParametersSetAsync();
+    }
+
+    async void OnClickClose()
+    {
+        _configName = String.Empty;
+        await HiddenChanged.InvokeAsync(true);
+        StateHasChanged();
+    }
+
+    async void OnClickSubmit()
+    {
+        await FormSubmitted.InvokeAsync(_configName);
+        _configName = String.Empty;
+        await HiddenChanged.InvokeAsync(true);
+        StateHasChanged();
+    }
+}
